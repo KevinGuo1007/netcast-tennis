@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { arenaHeight } from '../sim/ball';
 import { BALL, TUNING } from '../sim/constants';
 import { aimTarget, contactEta, GameState, serveTarget } from '../sim/game';
 import { SHOT_COLORS } from './colors';
@@ -16,10 +17,12 @@ const PALETTES: [Palette, Palette] = [
   {
     Skin: 0xe9b58c,
     Shirt: 0xffffff,
+    Trim: LIME,
     Shorts: 0x35157f,
     Shoes: LIME,
     Sock: 0xffffff,
     Hair: 0x2b1a12,
+    Eye: 0x1a1030,
     Band: LIME,
     Racket: LIME,
     Grip: 0x1a1030,
@@ -28,10 +31,12 @@ const PALETTES: [Palette, Palette] = [
   {
     Skin: 0xc98f65,
     Shirt: 0xff7a59,
+    Trim: 0xffffff,
     Shorts: 0x2a1260,
     Shoes: 0xffffff,
     Sock: 0xffffff,
     Hair: 0x15100c,
+    Eye: 0x1a1030,
     Band: 0xffffff,
     Racket: 0xffffff,
     Grip: 0x1a1030,
@@ -191,6 +196,7 @@ export class GameScene {
     const r = BALL.radius * BALL_SCALE;
     this.ball.position.set(b.x, Math.max(b.y, r), b.z);
     this.ballShadow.position.set(b.x, 0.014, b.z);
+    this.ballShadow.visible = arenaHeight(b.x, b.z) === 0; // 落在墙头或看台上时,地面上不该有影子
     this.ballShadow.scale.setScalar(0.85 + b.y * 0.08);
 
     // 拖尾:球速越快越明显

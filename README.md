@@ -26,6 +26,7 @@
 - 关掉辅助后要自己松手:脚边的白圈缩进色带、变成青柠色时松开。松得太晚会打空。
 - 挥拍之后有一小段调整姿势的时间,力度越大越久,期间不能再次挥拍。
 - 跑动、大力击球和扑救消耗体力;体力低时跑得慢、失误多。
+- 球场四周的围墙、广告牌和看台都是实心的:球没落地就打上去算出界,先落在界内再弹上去则这一分归击球方。
 
 ## 开发
 
@@ -52,7 +53,7 @@ vercel deploy --prod
 src/
   sim/            对局逻辑(与渲染无关)
     constants.ts    所有可调的数值:场地、球、击球时机、体力、冲刺……
-    ball.ts         球的物理(重力、空气阻力、旋转、弹跳、撞网)和落点求解
+    ball.ts         球的物理(重力、空气阻力、旋转、弹跳、撞网、撞围墙和看台)和落点求解
     game.ts         对局状态机:移动、蓄力、挥拍判定、扑救、发球、得分
     score.ts        网球计分
     ai.ts           电脑对手(和真人一样只输出按键)
@@ -60,7 +61,7 @@ src/
   render/         Three.js 渲染
     scene.ts        像素化渲染管线、机位、场上的各种标记
     stadium.ts      球场、看台、广告牌等场景
-    character.ts    人物骨骼动画(姿势库 + 弹簧过渡)
+    character.ts    人物骨骼动画(姿势库 + 弹簧过渡 + 跑步/滑步的步态)
   input/          键盘和触屏输入
   audio/          音效和背景音乐
   tutorial.ts     新手教学的课程和过关判定
@@ -81,7 +82,7 @@ public/           模型、Logo、音频等静态资源
 /Applications/Blender.app/Contents/MacOS/Blender -b --python tools/build_character.py -- public/models/player.glb
 ```
 
-**Logo**:`brand-src/` 里是带白底的源图,下面的脚本把它们处理成透明背景的 PNG(需要 Python 的 Pillow 和 NumPy)。
+**Logo**:`brand-src/` 里是带白底的源图,下面的脚本把它们处理成透明背景的 PNG,并生成标签页图标 `favicon.ico` 和 iOS 主屏图标(需要 Python 的 Pillow 和 NumPy)。
 
 ```bash
 python3 tools/make_brand_assets.py

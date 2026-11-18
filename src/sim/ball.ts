@@ -1,4 +1,4 @@
-import { BALL, COURT, DT, TUNING } from './constants';
+import { ARENA, BALL, COURT, DT, TUNING } from './constants';
 
 export interface Vec3 {
   x: number;
@@ -15,6 +15,104 @@ export interface Ball {
 
 export const BOUNCE = 1;
 export const NET = 2;
+export const WALL = 4;
+
+/** 围挡表面的种类:0 是地面,1 是墙,2 是看台 */
+let surfaceKind = 0;
+
+/**
+ * (x, z) 处围挡的高度:球场和缓冲区是 0,墙和看台是它们的顶面高度。
+ * 同时把表面的种类记在 surfaceKind 里(墙硬、看台软,反弹不一样)。
+ */
+export function arenaHeight(x: number, z: number): number {
+  const A = ARENA;
+  const ax = Math.abs(x);
+  const az = Math.abs(z);
+  surfaceKind = 0;
+  if (ax < A.sideX && az < A.backZ) return 0;
+  let h = 0;
+  const set = (height: number, kind: number): void => {
+    if (height > h) {
+      h = height;
+      surfaceKind = kind;
+    }
+  };
+  // 两端:背墙,远端墙后还有看台
+  const dz = az - A.backZ;
+  if (dz >= 0 && ax <= A.halfWidth) {
+    if (dz <= A.thickness) set(z < 0 ? A.farWallHeight : A.nearWallHeight, 1);
+    if (z < 0 && dz <= A.standDepth) set(A.standBase + A.standSlope * dz, 2);
+  }
+  // 两侧:矮墙和看台
+  const dx = ax - A.sideX;
+  if (dx >= 0 && az <= A.halfLength) {
+    if (dx <= A.thickness) set(A.sideWallHeight, 1);
+    if (dx <= A.standDepth && az <= A.backZ) set(A.standBase + A.standSlope * dx, 2);
+  }
+  return h;
+}
+
+/**
+ * 在球心沿运动方向探出 lead 的位置检查一次碰撞:迎面撞上就水平弹回,从上面落下就像落地一样弹起。
+ * 返回撞击速度;没有碰到返回 -1。
+ */
+function resolveArena(b: Ball, px: number, py: number, pz: number, lead: number): number {
+  const A = ARENA;
+  const p = b.pos;
+  const v = b.vel;
+  const ox = Math.sign(v.x) * lead;
+  const oz = Math.sign(v.z) * lead;
+  const h = arenaHeight(p.x + ox, p.z + oz);
+  if (h <= 0 || p.y - A.pad >= h) return -1;
+  const soft = surfaceKind === 2;
+  const e = soft ? A.standRestitution : A.wallRestitution;
+  const keep = soft ? A.standFriction : A.wallFriction;
+  let impact = 0;
+
+  if (py - A.pad >= h - 1e-9) {
+    // 从上方落到墙顶或看台上
+    impact = -v.y;
+    p.y = h + A.pad;
+    v.y = impact > 0.8 ? impact * e : 0;
+    const roll = impact > 0.8 ? keep : 0.9;
+    v.x *= roll;
+    v.z *= roll;
+  } else {
+    // 迎面撞上:看是哪个方向的移动造成的,就把哪个方向弹回去
+    const hitZ = arenaHeight(px + ox, p.z + oz) > p.y - A.pad;
+    const hitX = arenaHeight(p.x + ox, pz + oz) > p.y - A.pad;
+    if (hitZ || !hitX) {
+      impact = Math.max(impact, Math.abs(v.z));
+      p.z = pz;
+      v.z *= -e;
+      v.x *= keep;
+    }
+    if (hitX || !hitZ) {
+      impact = Math.max(impact, Math.abs(v.x));
+      p.x = px;
+      v.x *= -e;
+      v.z *= keep;
+    }
+    v.y *= keep;
+    // 在看台的斜坡上被挡回来时,球可能已经低于脚下的台面:托回台面上
+    const floor = arenaHeight(p.x, p.z) + A.pad;
+    if (p.y < floor) {
+      p.y = floor;
+      v.y = v.y < -0.8 ? -v.y * e : Math.max(v.y, 0);
+    }
+  }
+  b.spin *= 0.4;
+  return impact;
+}
+
+/** 墙和看台的碰撞。球在画面上有大小,所以球心和朝运动方向的球面各查一次。 */
+function collideArena(b: Ball, px: number, py: number, pz: number): number {
+  const A = ARENA;
+  if (Math.abs(b.pos.x) < A.sideX - A.pad && Math.abs(b.pos.z) < A.backZ - A.pad) return 0;
+  let impact = resolveArena(b, px, py, pz, A.pad);
+  if (impact < 0) impact = resolveArena(b, px, py, pz, 0);
+  return impact > 1 ? WALL : 0;
+}
 
 function integrate(b: Ball, dt: number): void {
   const v = b.vel;
@@ -34,11 +132,13 @@ function integrate(b: Ball, dt: number): void {
   b.pos.z += v.z * dt;
 }
 
-/** 推进一步,处理球网和地面碰撞。返回 BOUNCE / NET 标志位。 */
+/** 推进一步,处理球网、地面和围挡的碰撞。返回 BOUNCE / NET / WALL 标志位。 */
 export function stepBall(b: Ball, dt: number): number {
+  const prevX = b.pos.x;
+  const prevY = b.pos.y;
   const prevZ = b.pos.z;
   integrate(b, dt);
-  let flags = 0;
+  let flags = collideArena(b, prevX, prevY, prevZ);
 
   if (prevZ > 0 !== b.pos.z > 0 && b.pos.y < COURT.netHeight && Math.abs(b.pos.x) < COURT.netHalfWidth) {
     b.pos.z = prevZ > 0 ? 0.05 : -0.05;
@@ -144,13 +244,15 @@ export function predict(ball: Ball): Prediction {
     const flags = stepBall(b, DT);
     if (!bounced) {
       p.t += DT;
-      if (flags & BOUNCE || (b.pos.y <= BALL.radius && b.vel.y === 0)) {
+      // 没落地就先撞上了围挡:当作落在那里(肯定是界外)
+      if (flags & (BOUNCE | WALL) || (b.pos.y <= BALL.radius && b.vel.y === 0)) {
         bounced = true;
         p.x = b.pos.x;
         p.z = b.pos.z;
       }
     } else {
       after += DT;
+      if (flags & WALL) break;
       // 球升到腰部高度,或者已经到达弹跳最高点
       if (after >= 0.18 && (b.pos.y >= 0.95 || b.vel.y <= 0)) break;
       if (after >= 0.7) break;

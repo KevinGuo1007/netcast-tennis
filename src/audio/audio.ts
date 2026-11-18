@@ -17,7 +17,7 @@ const SFX_GROUPS = {
 } as const;
 
 export type SfxGroup = keyof typeof SFX_GROUPS;
-export type SynthSound = 'net' | 'whoosh' | 'click' | 'perfect' | 'fault' | 'win' | 'lose';
+export type SynthSound = 'net' | 'wall' | 'whoosh' | 'click' | 'perfect' | 'fault' | 'win' | 'lose';
 
 export const TRACKS = [
   { file: 'pixelland.mp3', title: 'Pixelland' },
@@ -217,6 +217,10 @@ export class AudioManager {
       case 'net': // 球撞网:一声闷响加网绳的沙沙声
         this.tone(110, t, 0.18, 0.5 * volume, 'sine', 55);
         this.noise(t, 0.16, 0.35 * volume, 'lowpass', 900, 250);
+        break;
+      case 'wall': // 球砸在围墙、广告牌上:比撞网更硬、更短的一声
+        this.tone(170, t, 0.12, 0.55 * volume, 'triangle', 80);
+        this.noise(t, 0.07, 0.3 * volume, 'lowpass', 1400, 300);
         break;
       case 'whoosh': // 挥拍带起的风声
         this.noise(t, 0.2, 0.22 * volume, 'bandpass', 500, 2600);

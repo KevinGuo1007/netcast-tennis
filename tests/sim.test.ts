@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { AI_LEVELS, AiController } from '../src/sim/ai';
-import { BOUNCE, predict, solveShot, stepBall } from '../src/sim/ball';
-import { COURT, DT, HUMAN, TUNING } from '../src/sim/constants';
+import { arenaHeight, Ball, BOUNCE, predict, solveShot, stepBall, WALL } from '../src/sim/ball';
+import { ARENA, COURT, DT, HUMAN, TUNING } from '../src/sim/constants';
 import {
   aimTarget,
   contactEta,
+  feedBall,
   GameEvent,
   GameState,
   newGame,
@@ -106,6 +107,101 @@ function playMatch(seed: number) {
   }
   return { state, events, steps };
 }
+
+describe('围墙和看台', () => {
+  /** 一直模拟到球停下来,检查它从头到尾都没有钻进墙或看台里 */
+  const fly = (b: Ball, seconds = 6): { walls: number; bounces: number; deepest: number } => {
+    let walls = 0;
+    let bounces = 0;
+    let deepest = 0;
+    for (let i = 0; i < seconds / DT; i++) {
+      const flags = stepBall(b, DT);
+      if (flags & WALL) walls++;
+      if (flags & BOUNCE) bounces++;
+      deepest = Math.max(deepest, arenaHeight(b.pos.x, b.pos.z) - b.pos.y);
+    }
+    return { walls, bounces, deepest };
+  };
+
+  it('打在远端的广告牌上会弹回来,不会穿过去', () => {
+    const b: Ball = { pos: { x: 0, y: 1, z: 8 }, vel: { x: 2, y: 9, z: -34 }, spin: 0 };
+    const r = fly(b);
+    expect(r.walls).toBeGreaterThan(0);
+    expect(r.deepest).toBeLessThanOrEqual(0);
+    expect(b.pos.z).toBeGreaterThan(-ARENA.backZ);
+    expect(Math.abs(b.pos.z)).toBeLessThan(ARENA.backZ);
+  });
+
+  it('两侧的矮墙和近端的墙也一样', () => {
+    for (const vel of [
+      { x: 20, y: 2, z: -6 },
+      { x: -20, y: 2, z: -6 },
+      { x: 1, y: 3, z: 22 },
+    ]) {
+      const b: Ball = { pos: { x: 0, y: 0.6, z: 6 }, vel, spin: 0 };
+      const r = fly(b);
+      expect(r.walls).toBeGreaterThan(0);
+      expect(r.deepest).toBeLessThanOrEqual(0);
+      expect(Math.abs(b.pos.x)).toBeLessThan(ARENA.sideX);
+      expect(Math.abs(b.pos.z)).toBeLessThan(ARENA.backZ);
+    }
+  });
+
+  it('飞过墙头的球落进看台,留在观众席里', () => {
+    const b: Ball = { pos: { x: 0, y: 1, z: 8 }, vel: { x: 0, y: 12, z: -34 }, spin: 0 };
+    const r = fly(b, 8);
+    expect(r.deepest).toBeLessThanOrEqual(0);
+    expect(b.pos.z).toBeLessThan(-ARENA.backZ - ARENA.thickness);
+    expect(b.pos.y).toBeGreaterThan(ARENA.standBase);
+    expect(Math.hypot(b.vel.x, b.vel.y, b.vel.z)).toBeLessThan(0.5);
+  });
+
+  it('各种角度乱打都不会穿模', () => {
+    const rng = makeRng(7);
+    for (let n = 0; n < 300; n++) {
+      const a = rng() * Math.PI * 2;
+      const speed = 8 + rng() * 40;
+      const b: Ball = {
+        pos: { x: (rng() - 0.5) * 16, y: 0.3 + rng() * 2, z: (rng() - 0.5) * 30 },
+        vel: { x: Math.cos(a) * speed, y: -4 + rng() * 22, z: Math.sin(a) * speed },
+        spin: (rng() - 0.5) * 500,
+      };
+      expect(fly(b, 5).deepest).toBeLessThanOrEqual(1e-6);
+    }
+  });
+
+  /** 近端球员(0 号)从底线附近把球打向远端,没有人去接 */
+  const rally = (launch: (s: GameState) => void): GameEvent[] => {
+    const s = newGame(HUMAN, HUMAN, 0);
+    feedBall(s, { fromX: 0, fromZ: 8, toX: 0, toZ: -8, speed: 20 });
+    s.lastHitter = 0;
+    launch(s);
+    s.prediction = predict(s.ball);
+    const rng = makeRng(1);
+    const events: GameEvent[] = [];
+    for (let i = 0; i < 4 / DT && s.phase === 'rally'; i++) events.push(...step(s, [NO_INPUT, NO_INPUT], DT, rng));
+    return events;
+  };
+
+  it('没落地就打到墙上:算出界,对方得分', () => {
+    const events = rally((s) => (s.ball.vel = { x: 0, y: 6, z: -36 }));
+    expect(events.map((e) => e.type)).toEqual(['wall', 'point']);
+    expect(events[1]).toMatchObject({ winner: 1, reason: 'out' });
+  });
+
+  it('先落在界内再弹到墙上:这一分归击球方', () => {
+    const events = rally((s) => (s.ball.vel = solveShot(s.ball.pos, 0, -11.4, 36, 0)));
+    expect(events.map((e) => e.type)).toEqual(['bounce', 'wall', 'point']);
+    expect(events[2]).toMatchObject({ winner: 0, reason: 'winner' });
+  });
+
+  it('会撞墙的球,落点预测判为界外', () => {
+    const b: Ball = { pos: { x: 0, y: 1, z: 8 }, vel: { x: 0, y: 6, z: -36 }, spin: 0 };
+    const p = predict(b);
+    expect(p.z).toBeLessThan(-COURT.halfLength);
+    expect(p.z).toBeGreaterThan(-ARENA.backZ);
+  });
+});
 
 describe('对局', () => {
   it('AI 对 AI 能打完一整场,并且有来回', () => {

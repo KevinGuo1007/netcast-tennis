@@ -1,4 +1,4 @@
-import { Ball, BOUNCE, cloneBall, NET, Prediction, predict, solveShot, stepBall } from './ball';
+import { Ball, BOUNCE, cloneBall, NET, Prediction, predict, solveShot, stepBall, WALL } from './ball';
 import { BALL, COURT, DT, HUMAN, SHOTS, ShotType, STAMINA, TUNING } from './constants';
 import { gaussian, Rng } from './rng';
 import { awardPoint, newScore, PlayerId, Score } from './score';
@@ -112,6 +112,8 @@ export type GameEvent =
   | { type: 'dive'; player: PlayerId }
   | { type: 'bounce'; x: number; z: number }
   | { type: 'net' }
+  /** 球打在围墙、广告牌或看台上;speed 是撞上去的速度 */
+  | { type: 'wall'; x: number; z: number; speed: number }
   | { type: 'fault' }
   | { type: 'point'; winner: PlayerId; reason: PointReason }
   | { type: 'game'; winner: PlayerId }
@@ -526,7 +528,6 @@ function onBounce(s: GameState, events: GameEvent[]): void {
   events.push({ type: 'bounce', x, z });
   if (s.phase !== 'rally' || s.lastHitter === null) return;
   const hitter = s.lastHitter;
-  const opponent = (1 - hitter) as PlayerId;
   if (s.bounces >= 1) {
     // 发球落地两次都没被碰到就是 ACE
     endPoint(s, hitter, s.isServe ? 'ace' : 'winner', events);
@@ -536,6 +537,12 @@ function onBounce(s: GameState, events: GameEvent[]): void {
     s.bounces = 1;
     return;
   }
+  missed(s, z * s.players[hitter].dir >= 0, events);
+}
+
+/** 球没有落在有效区:发球算失误,相持中对方得分 */
+function missed(s: GameState, ownSide: boolean, events: GameEvent[]): void {
+  const opponent = (1 - s.lastHitter!) as PlayerId;
   if (s.isServe) {
     if (s.practice) {
       events.push({ type: 'fault' });
@@ -553,8 +560,16 @@ function onBounce(s: GameState, events: GameEvent[]): void {
     }
     return;
   }
-  const ownSide = z * s.players[hitter].dir >= 0;
   endPoint(s, opponent, ownSide ? 'net' : 'out', events);
+}
+
+/** 球打到围墙或看台:和真实规则一样,落地前碰到算出界;已经落在界内再碰到,这一分归击球方 */
+function onWall(s: GameState, speed: number, events: GameEvent[]): void {
+  const { x, z } = s.ball.pos;
+  events.push({ type: 'wall', x, z, speed });
+  if (s.phase !== 'rally' || s.lastHitter === null) return;
+  if (s.bounces >= 1) endPoint(s, s.lastHitter, s.isServe ? 'ace' : 'winner', events);
+  else missed(s, false, events);
 }
 
 // ---------------------------------------------------------------- 移动、冲刺、扑救
@@ -897,9 +912,11 @@ export function step(s: GameState, inputs: [PlayerInput, PlayerInput], dt: numbe
     return events;
   }
 
+  const { x: vx, y: vy, z: vz } = s.ball.vel;
   const flags = stepBall(s.ball, dt);
   s.sinceHit += dt;
   if (flags & NET) events.push({ type: 'net' });
+  if (flags & WALL) onWall(s, Math.hypot(vx, vy, vz), events);
   if (flags & BOUNCE) onBounce(s, events);
 
   // 挥拍和扑救的击球判定(一分结束后的空挥也会判定为打空)

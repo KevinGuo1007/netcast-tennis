@@ -19,6 +19,30 @@ export const BALL = {
   friction: 0.72, // 落地后水平速度保留比例(无旋转时)
 };
 
+/**
+ * 球场四周的围挡:两端的背墙、两侧的矮墙,以及墙后面的看台。球碰到会反弹。
+ * 尺寸和 render/stadium.ts 里画出来的墙、看台一一对应(画面直接引用这里的数值)。
+ */
+export const ARENA = {
+  backZ: 19, // 两端背墙朝球场一面的位置
+  sideX: 11, // 两侧矮墙朝球场一面的位置
+  thickness: 0.4,
+  halfWidth: 17, // 背墙和远端看台的半宽
+  halfLength: 19.2, // 侧墙的半长
+  farWallHeight: 3.56, // 远端背墙(挂着大广告牌,含顶上的饰条)
+  nearWallHeight: 1.0,
+  sideWallHeight: 1.52,
+  // 看台:离墙面越远越高,高度取到观众的肩膀附近
+  standBase: 1.3,
+  standSlope: 0.7,
+  standDepth: 9,
+  pad: 0.11, // 球在画面上是放大显示的,按看得见的大小判定,才不会陷进墙里
+  wallRestitution: 0.55,
+  wallFriction: 0.8,
+  standRestitution: 0.25, // 打进观众席基本就停住了
+  standFriction: 0.45,
+};
+
 export const DT = 1 / 120;
 
 export type ShotType = 'flat' | 'top' | 'slice' | 'lob';

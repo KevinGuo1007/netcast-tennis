@@ -20,8 +20,10 @@ const JOINTS = [
   'elbowL',
   'thighR',
   'kneeR',
+  'footR',
   'thighL',
   'kneeL',
+  'footL',
 ] as const;
 type Joint = (typeof JOINTS)[number];
 type Angles = [number, number, number];
@@ -40,8 +42,10 @@ const BONE_OF: Record<Joint, string> = {
   elbowL: 'LowerArmL',
   thighR: 'ThighR',
   kneeR: 'ShinR',
+  footR: 'FootR',
   thighL: 'ThighL',
   kneeL: 'ShinL',
+  footL: 'FootL',
 };
 
 const N = JOINTS.length * 3 + 2;
@@ -52,6 +56,13 @@ const at = (j: Joint): number => JOINTS.indexOf(j) * 3;
 const ARM_START = at('armR');
 const ARM_END = at('elbowL') + 3;
 const SPINE = at('spine');
+const LEGS_START = at('thighR');
+/** 踝关节:[脚的通道, 大腿的通道, 膝盖的通道] */
+const FEET = [
+  [at('footR'), at('thighR'), at('kneeR')],
+  [at('footL'), at('thighL'), at('kneeL')],
+] as const;
+const TAU = Math.PI * 2;
 
 function pose(spec: PoseSpec): Float32Array {
   const out = new Float32Array(N);
@@ -339,13 +350,52 @@ function mix(a: Float32Array, b: Float32Array, t: number, out: Float32Array, fro
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+const frac = (v: number): number => v - Math.floor(v);
+
+/**
+ * 跑步时一条腿在一个周期里的关键帧。u 是周期进度:0 脚落地 → 0.12 支撑 → 0.28 蹬离地面 →
+ * 小腿向后折叠 → 0.75 抬膝前摆 → 0.9 小腿前伸准备落地。另一条腿差半个周期。
+ * foot 是踝关节相对"脚掌放平"的角度:负数是绷脚尖(蹬地),正数是勾脚。
+ */
+const RUN = {
+  u: [0, 0.12, 0.28, 0.42, 0.58, 0.75, 0.9],
+  thigh: [0.45, 0.05, -0.5, -0.25, 0.55, 1.0, 0.75],
+  knee: [-0.35, -0.55, -0.25, -1.45, -1.75, -1.25, -0.45],
+  foot: [0.1, 0, -0.55, -0.3, -0.2, 0, 0.15],
+};
+/** 步态的"平均姿势":经过弹簧过渡;周期性的摆动直接叠加在它上面,不被弹簧拖慢 */
+const RUN_MEAN = { thigh: 0.25, knee: -0.7, hip: -0.03 };
+const SHUFFLE_MEAN = { thigh: 0.42, knee: -0.8, hip: -0.1, spread: 0.3 };
+
+/** 周期性的关键帧插值(Catmull-Rom):首尾相接,过渡平滑 */
+function cyclic(times: number[], values: number[], u: number): number {
+  const n = times.length;
+  let i = n - 1;
+  while (i > 0 && times[i] > u) i--;
+  const key = (k: number): [number, number] => {
+    const w = Math.floor(k / n);
+    const j = k - w * n;
+    return [times[j] + w, values[j]];
+  };
+  const [t0, v0] = key(i - 1);
+  const [t1, v1] = key(i);
+  const [t2, v2] = key(i + 1);
+  const [t3, v3] = key(i + 2);
+  const h = t2 - t1;
+  const x = (u - t1) / h;
+  const m1 = ((v2 - v0) / (t2 - t0)) * h;
+  const m2 = ((v3 - v1) / (t3 - t1)) * h;
+  const x2 = x * x;
+  const x3 = x2 * x;
+  return (2 * x3 - 3 * x2 + 1) * v1 + (x3 - 2 * x2 + x) * m1 + (-2 * x3 + 3 * x2) * v2 + (x3 - x2) * m2;
+}
 const easeIn = (t: number): number => t * t * t;
 const easeOut = (t: number): number => 1 - (1 - t) * (1 - t);
 const smooth = (t: number): number => t * t * (3 - 2 * t);
 
 /** 材质名 → 颜色。材质名来自建模脚本,每个球员用自己的一套配色。 */
 export type Palette = Record<
-  'Skin' | 'Shirt' | 'Shorts' | 'Shoes' | 'Sock' | 'Hair' | 'Band' | 'Racket' | 'Grip' | 'Strings',
+  'Skin' | 'Shirt' | 'Trim' | 'Shorts' | 'Shoes' | 'Sock' | 'Hair' | 'Eye' | 'Band' | 'Racket' | 'Grip' | 'Strings',
   number
 >;
 
@@ -369,19 +419,19 @@ const GROUND_PROBES: [bone: string, x: number, y: number, z: number, radius: num
   ['UpperArmL', -0.262, 1.4, 0, 0.085],
   ['LowerArmR', 0.262, 1.15, 0, 0.06],
   ['LowerArmL', -0.262, 1.15, 0, 0.06],
-  ['HandR', 0.262, 0.85, 0, 0.06],
-  ['LowerArmL', -0.262, 0.85, 0, 0.06],
+  ['HandR', 0.262, 0.85, 0, 0.065],
+  ['LowerArmL', -0.262, 0.85, 0, 0.065],
   // 球拍:拍头的顶端和左右两侧
-  ['HandR', 0.262, 0.175, 0, 0.02],
-  ['HandR', 0.39, 0.345, 0, 0.02],
-  ['HandR', 0.134, 0.345, 0, 0.02],
-  ['ShinR', 0.095, 0.5, 0, 0.075],
-  ['ShinL', -0.095, 0.5, 0, 0.075],
-  // 脚:脚尖和脚跟
-  ['ShinR', 0.095, 0.03, -0.19, 0.03],
-  ['ShinR', 0.095, 0.03, 0.08, 0.03],
-  ['ShinL', -0.095, 0.03, -0.19, 0.03],
-  ['ShinL', -0.095, 0.03, 0.08, 0.03],
+  ['HandR', 0.262, 0.155, 0, 0.02],
+  ['HandR', 0.4, 0.33, 0, 0.02],
+  ['HandR', 0.124, 0.33, 0, 0.02],
+  ['ShinR', 0.095, 0.5, 0, 0.08],
+  ['ShinL', -0.095, 0.5, 0, 0.08],
+  // 脚:脚尖和脚跟(跟着踝关节转)
+  ['FootR', 0.095, 0.03, -0.195, 0.03],
+  ['FootR', 0.095, 0.03, 0.085, 0.03],
+  ['FootL', -0.095, 0.03, -0.195, 0.03],
+  ['FootL', -0.095, 0.03, 0.085, 0.03],
 ];
 
 interface BoneBinding {
@@ -417,7 +467,20 @@ export class Character {
   private velocity = new Float32Array(N);
   private target = new Float32Array(N);
   private scratch = new Float32Array(N);
+  private pose = new Float32Array(N); // 最终摆到骨骼上的角度 = 弹簧的结果 + 步态的摆动
+  // 步态的周期摆动:直接叠加,不经过弹簧(否则步频一高,动作就被弹簧抹平、拖在后面)
+  private gaitRaw = new Float32Array(N);
+  private gaitW = 0;
+  private gaitTarget = 0;
+  private moving = false;
   private runPhase = 0;
+  private shufflePhase = 0;
+  private shuffle = 0; // 滑步的比重 0..1
+  private shuffleSide = 0; // 滑步的方向:+1 往自己右手边
+  private prevFwd = 0;
+  private prevRight = 0;
+  private accFwd = 0;
+  private accRight = 0;
   private time = Math.random() * 10;
   private moveYaw = 0;
   private seenHit = -1;
@@ -440,7 +503,7 @@ export class Character {
       const convert = (m: THREE.Material): THREE.Material => {
         const name = m.name as keyof Palette;
         if (name === 'Strings') {
-          return new THREE.MeshBasicMaterial({ color: palette.Strings, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+          return new THREE.MeshBasicMaterial({ color: palette.Strings, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
         }
         return toon(palette[name] ?? 0xffffff, { side: THREE.DoubleSide });
       };
@@ -514,46 +577,140 @@ export class Character {
     else this.target.set(set.up);
   }
 
-  /** 跑动:腿交替摆动、手臂反向摆臂、躯干前倾并反向扭转;倒退时步子反着走 */
+  /**
+   * 移动时的步态。两种步子按情况混合:
+   * - 跑:一条腿依次落地、支撑、蹬地、折叠小腿、抬膝前摆;手臂反向摆动,骨盆和肩反向扭转,
+   *   每一步身体腾空一次;步幅随速度变大。倒退时同一套动作倒着走。
+   * - 滑步:小范围横向移动(以及引拍时的就位)面向球网,两腿一开一合。
+   * arms 为 false 时(引拍、收拍)上身保持击球姿势,只有腿在动。
+   */
   private locomotion(p: Player, dt: number, arms: boolean): void {
+    this.moving = true;
     const speed = Math.hypot(p.vx, p.vz);
-    const blend = clamp(speed / 2.6, 0, 1);
-    const forward = -p.vz * p.dir; // 朝球网方向的速度
-    const backpedal = forward < -0.4 * speed && speed > 0.5;
+    // 换算到身体自己的前方和右手边(身体跑动时会转向移动方向)
+    const cos = Math.cos(this.moveYaw);
+    const sin = Math.sin(this.moveYaw);
+    const toNet = -p.vz * p.dir;
+    const toRight = p.vx * p.dir;
+    const fwd = toNet * cos - toRight * sin;
+    const right = toNet * sin + toRight * cos;
     const sprint = p.sprinting ? 1 : 0;
-    this.runPhase += (backpedal ? -1 : 1) * speed * dt * (2.5 - 0.3 * sprint);
-    if (blend < 0.04) return;
+    const follow = (rate: number): number => 1 - Math.exp(-rate * dt);
 
-    const s = Math.sin(this.runPhase);
-    const c = Math.cos(this.runPhase);
-    const stride = 0.78 + 0.3 * sprint;
-    const legs = this.scratch;
-    legs.set(this.target);
-    legs.set([0.3 + stride * s, 0, 0.06], at('thighR'));
-    legs.set([-0.45 - 1.05 * Math.max(0, -c), 0, 0], at('kneeR'));
-    legs.set([0.3 - stride * s, 0, -0.06], at('thighL'));
-    legs.set([-0.45 - 1.05 * Math.max(0, c), 0, 0], at('kneeL'));
-    legs[HIP] = -0.05 + 0.055 * Math.abs(c);
-    legs.set([0, 0.16 * s, 0.05 * s], at('hips'));
-    if (arms) {
-      const lean = backpedal ? 0.05 : -(0.34 + 0.22 * sprint);
-      legs.set([lean, -0.3 * s, 0], at('spine'));
-      legs.set([-lean * 0.7, 0, 0], at('head'));
-      legs.set([0.15 - (0.75 + 0.2 * sprint) * s, 0, 0.18], at('armR'));
-      legs.set([1.45, 0, 0], at('elbowR'));
-      legs.set([-0.8, 0, 0], at('wristR'));
-      legs.set([0.15 + (0.75 + 0.2 * sprint) * s, 0, -0.18], at('armL'));
-      legs.set([1.45, 0, 0], at('elbowL'));
-      mix(this.target, legs, blend, this.target);
-    } else {
-      // 引拍或收拍时上身保持击球姿势,只让腿跑起来
-      mix(this.target, legs, blend, this.target, at('thighR'), HIP + 1);
-      mix(this.target, legs, blend * 0.5, this.target, at('hips'), at('hips') + 3);
+    // 加速度:起跑时身体前压,急停时后仰,变向时向里倾
+    if (dt > 0) {
+      this.accFwd += ((fwd - this.prevFwd) / dt - this.accFwd) * follow(7);
+      this.accRight += ((right - this.prevRight) / dt - this.accRight) * follow(7);
     }
+    this.prevFwd = fwd;
+    this.prevRight = right;
+
+    const sideways = speed > 0.3 ? (right / speed) ** 2 : 0;
+    const shuffleTarget = sideways * (arms ? 1 - smooth(clamp((speed - 2.5) / 2.5, 0, 1)) : 1);
+    this.shuffle += (shuffleTarget - this.shuffle) * follow(10);
+    this.shuffleSide += (Math.sign(right) - this.shuffleSide) * follow(12);
+    const sh = this.shuffle;
+    const run = 1 - sh;
+    const backpedal = fwd < -0.4 * speed && speed > 0.5;
+
+    // 步幅随速度变大(慢跑 0.9 米,全速 1.8 米,冲刺 2.3 米),步频自然跟着变,脚才不打滑
+    const stepLength = Math.min(2.3, 0.6 + 0.16 * speed) * (backpedal ? 0.6 : 1);
+    this.runPhase += (backpedal ? -1 : 1) * (speed / stepLength) * Math.PI * dt;
+    this.shufflePhase += Math.min(3.2, speed / 0.65) * TAU * dt;
+    this.gaitTarget = clamp(speed / 1.6, 0, 1);
+    const blend = this.gaitTarget;
+
+    // ---- 平均姿势(交给弹簧去过渡)
+    const c = this.scratch;
+    c.set(this.target);
+    const thigh = RUN_MEAN.thigh * run + SHUFFLE_MEAN.thigh * sh;
+    const knee = RUN_MEAN.knee * run + SHUFFLE_MEAN.knee * sh;
+    const spread = 0.05 * run + SHUFFLE_MEAN.spread * sh;
+    c.set([thigh, 0, spread], at('thighR'));
+    c.set([knee, 0, 0], at('kneeR'));
+    c.set([0, 0, 0], at('footR'));
+    c.set([thigh, 0, -spread], at('thighL'));
+    c.set([knee, 0, 0], at('kneeL'));
+    c.set([0, 0, 0], at('footL'));
+    c[HIP] = RUN_MEAN.hip * run + SHUFFLE_MEAN.hip * sh;
+    const bank = clamp(-this.accRight * 0.008, -0.14, 0.14);
+    if (arms) {
+      const base = backpedal ? 0.06 : -(0.18 + 0.2 * clamp(speed / 7.4, 0, 1) + 0.14 * sprint);
+      const lean = clamp(base - this.accFwd * 0.012, -0.75, 0.2);
+      const u = run * blend; // 上身只在"跑"的时候换成跑步姿势,滑步时保持准备姿势
+      mix(this.target, c, blend, this.target, LEGS_START, HIP + 1);
+      const upper: [Joint, Angles][] = [
+        ['hips', [0, 0, bank * 0.5]],
+        ['spine', [lean, 0, bank]],
+        ['head', [-lean * 0.7, 0, 0]],
+        ['armR', [0.12, 0, 0.17]],
+        ['elbowR', [1.45, 0, 0]],
+        ['wristR', [-0.75, 0, 0]],
+        ['armL', [0.12, 0, -0.17]],
+        ['elbowL', [1.5, 0, 0]],
+      ];
+      for (const [joint, angles] of upper) {
+        const i = at(joint);
+        for (let k = 0; k < 3; k++) this.target[i + k] += (angles[k] - this.target[i + k]) * u;
+      }
+    } else {
+      mix(this.target, c, blend, this.target, LEGS_START, HIP + 1);
+      this.target[at('spine') + 2] += bank * 0.6 * blend;
+    }
+
+    // ---- 周期摆动(不经过弹簧)
+    const g = this.gaitRaw;
+    g.fill(0);
+    const amount = (clamp(0.4 + (0.6 * speed) / 7.4, 0.4, 1) + 0.12 * sprint) * (backpedal ? 0.6 : 1) * (arms ? 1 : 0.75);
+    const uR = frac(this.runPhase / TAU);
+    const uL = frac(uR + 0.5);
+    const stand = { thigh: 0.2, knee: -0.4 };
+    const legs: [number, 'R' | 'L'][] = [
+      [uR, 'R'],
+      [uL, 'L'],
+    ];
+    for (const [u, side] of legs) {
+      g[at(`thigh${side}`)] = run * (stand.thigh + amount * (cyclic(RUN.u, RUN.thigh, u) - stand.thigh) - RUN_MEAN.thigh);
+      g[at(`knee${side}`)] = run * (stand.knee + amount * (cyclic(RUN.u, RUN.knee, u) - stand.knee) - RUN_MEAN.knee);
+      g[at(`foot${side}`)] = run * amount * cyclic(RUN.u, RUN.foot, u);
+    }
+    // 两脚都离地的时候身体最高,单脚支撑时最低
+    g[HIP] = run * 0.05 * amount * Math.cos(2 * TAU * (uR - 0.39));
+    // 骨盆跟着前摆的腿转,肩反着转(摆臂);引拍时肩保持不动
+    const twist = 0.17 * amount * Math.cos(TAU * (uR - 0.8));
+    const counter = arms ? -2.1 * twist : -twist;
+    g[at('hips') + 1] = run * twist;
+    g[at('spine') + 1] = run * counter;
+    g[at('head') + 1] = -run * (twist + counter); // 头不跟着晃
+    if (arms) {
+      const swingR = Math.cos(TAU * (uR - 0.3)); // 右臂和左腿一起向前
+      const swingL = -swingR;
+      g[at('armR')] = run * 0.72 * amount * swingR; // 持拍手摆得小一点
+      g[at('elbowR')] = run * 0.22 * amount * swingR;
+      g[at('armL')] = run * 0.9 * amount * swingL;
+      g[at('elbowL')] = run * 0.3 * amount * swingL;
+      g[at('spine')] = run * 0.03 * amount * Math.cos(2 * TAU * (uR - 0.05));
+    }
+
+    // 滑步:两腿一开一合,正在挪动的那条腿抬起来一点;并拢和分到最开时各蹬一下地
+    const psi = this.shufflePhase;
+    const open = 0.23 * -Math.cos(psi);
+    const lift = Math.sin(psi);
+    const leadR = 0.5 + 0.5 * this.shuffleSide;
+    const liftR = leadR * Math.max(0, lift) + (1 - leadR) * Math.max(0, -lift);
+    const liftL = (1 - leadR) * Math.max(0, lift) + leadR * Math.max(0, -lift);
+    g[at('thighR') + 2] += sh * open;
+    g[at('thighL') + 2] -= sh * open;
+    g[at('thighR')] += sh * 0.22 * liftR;
+    g[at('thighL')] += sh * 0.22 * liftL;
+    g[at('kneeR')] -= sh * 0.5 * liftR;
+    g[at('kneeL')] -= sh * 0.5 * liftL;
+    g[HIP] += sh * 0.03 * Math.cos(2 * psi);
   }
 
   update(p: Player, dt: number, ctx: CharacterContext): void {
     this.time += dt;
+    this.moving = false;
     let stiffness = 13; // 弹簧的角频率:越大跟得越紧
     let damping = 0.8;
     let lookAtBall = true;
@@ -643,6 +800,9 @@ export class Character {
       this.target[at('head')] = clamp(-this.target[at('spine')] * 0.8 + pitch * 0.8, -0.5, 0.75);
     }
 
+    // 步态摆动的强弱:起步时渐入,停下或开始挥拍时很快收掉
+    this.gaitW += ((this.moving ? this.gaitTarget : 0) - this.gaitW) * (1 - Math.exp(-(this.moving ? 10 : 18) * dt));
+
     // 弹簧积分(步长过大时拆成几小步,避免不稳定)
     const steps = Math.max(1, Math.ceil(dt / (1 / 90)));
     const h = dt / steps;
@@ -659,7 +819,8 @@ export class Character {
     const speed = Math.hypot(p.vx, p.vz);
     const lateral = (p.vx * p.dir) / Math.max(speed, 1);
     const forward = (-p.vz * p.dir) / Math.max(speed, 1);
-    const turn = idle ? clamp(speed / 4, 0, 1) * (forward < -0.4 ? 0.35 : 1.05) : p.stroke === 'prep' ? 0.25 : 0;
+    // 小范围移动面向球网滑步;跑起来才把身体转向移动方向(倒退时基本保持面向球网)
+    const turn = idle ? smooth(clamp((speed - 2.2) / 3, 0, 1)) * (forward < -0.4 ? 0.35 : 1.3) : p.stroke === 'prep' ? 0.15 : 0;
     this.moveYaw += (-lateral * turn - this.moveYaw) * (1 - Math.exp(-9 * dt));
 
     this.root.position.set(p.x, 0, p.z);
@@ -683,12 +844,17 @@ export class Character {
   }
 
   private apply(): void {
+    const v = this.pose;
+    for (let i = 0; i < N; i++) v[i] = this.current[i] + this.gaitW * this.gaitRaw[i];
+    // 踝关节:抵消掉小腿的倾斜,让脚掌尽量放平;超出脚踝的活动范围时自然变成踮脚
+    const hipsPitch = v[at('hips')];
+    for (const [foot, thigh, knee] of FEET) v[foot] = clamp(v[foot] - (hipsPitch + v[thigh] + v[knee]), -0.9, 0.5);
     this.bindings.forEach((b, i) => {
-      euler.set(this.current[i * 3], this.current[i * 3 + 1], this.current[i * 3 + 2]);
+      euler.set(v[i * 3], v[i * 3 + 1], v[i * 3 + 2]);
       qPose.setFromEuler(euler);
       // 局部旋转 = 父节点静止朝向的逆 × 关节旋转 × 骨骼静止朝向
       b.bone.quaternion.copy(b.parentInv).multiply(qPose).multiply(b.rest);
     });
-    this.hips.position.copy(this.hipsRest).addScaledVector(this.hipsUp, this.current[HIP]);
+    this.hips.position.copy(this.hipsRest).addScaledVector(this.hipsUp, v[HIP]);
   }
 }

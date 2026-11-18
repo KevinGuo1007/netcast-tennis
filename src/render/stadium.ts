@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COURT } from '../sim/constants';
+import { ARENA, COURT } from '../sim/constants';
 import { toon } from './toon';
 
 // 配色取自 Netcast Tennis 的 Logo:紫色渐变、青柠绿、白色
@@ -211,7 +211,8 @@ function buildWallsAndBoards(scene: THREE.Scene, anisotropy: number): void {
   };
 
   // 远端背墙:正中一幅大的白字文字标,两侧各一个图标
-  const backZ = -19;
+  // 墙的位置和高度取自 ARENA:球的碰撞用的是同一组数值
+  const backZ = -ARENA.backZ;
   const back = box(34, 3.4, 0.4, C.wall, 0, 1.7, backZ - 0.2);
   back.castShadow = true;
   scene.add(back, box(34, 0.16, 0.46, C.lime, 0, 3.48, backZ - 0.2));
@@ -226,11 +227,11 @@ function buildWallsAndBoards(scene: THREE.Scene, anisotropy: number): void {
   }
 
   // 近端矮墙(在机位下方,不挡视线)
-  scene.add(box(34, 1.0, 0.4, C.wall, 0, 0.5, 19.2));
+  scene.add(box(34, ARENA.nearWallHeight, 0.4, C.wall, 0, ARENA.nearWallHeight / 2, ARENA.backZ + 0.2));
 
   // 两侧矮墙:每侧四块大广告牌
   for (const s of [-1, 1]) {
-    const x = s * 11;
+    const x = s * ARENA.sideX;
     scene.add(box(0.4, 1.4, 38.4, C.wall, x + s * 0.2, 0.7, 0));
     scene.add(box(0.46, 0.12, 38.4, C.lime, x + s * 0.2, 1.46, 0));
     for (const z of [-13.8, -4.6, 4.6, 13.8]) board(x - s * 0.02, 0.7, z, -s * (Math.PI / 2), 8.4, 1.2);

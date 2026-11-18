@@ -22,10 +22,12 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 COLORS = {
     "Skin": (0.91, 0.71, 0.55),
     "Shirt": (1.0, 1.0, 1.0),
+    "Trim": (0.72, 0.9, 0.18),
     "Shorts": (0.29, 0.12, 0.69),
     "Shoes": (0.72, 0.9, 0.18),
     "Sock": (1.0, 1.0, 1.0),
     "Hair": (0.17, 0.1, 0.07),
+    "Eye": (0.1, 0.06, 0.19),
     "Band": (0.72, 0.9, 0.18),
     "Racket": (0.72, 0.9, 0.18),
     "Grip": (0.1, 0.06, 0.19),
@@ -44,7 +46,7 @@ for name in MAT_NAMES:
 
 verts = []  # (x, y, z)
 weights = []  # {bone: weight}
-faces = []  # (indices, material index)
+faces = []  # (indices, material index, smooth)
 
 
 def add_vert(p, w):
@@ -53,26 +55,37 @@ def add_vert(p, w):
     return len(verts) - 1
 
 
+def face(ids, mat, smooth=False):
+    faces.append((tuple(ids), MAT_NAMES.index(mat), smooth))
+
+
 def tube(rings, sides, mat, cap_start=True, cap_end=True, seg_mats=None):
-    """沿 z 轴的管状体。ring = (中心, (rx, ry), 权重)。相邻的环之间连成四边形。"""
-    idx = []
-    for center, (rx, ry), w in rings:
-        ring = []
-        for i in range(sides):
-            a = 2 * math.pi * (i + 0.5) / sides
-            ring.append(add_vert((center[0] + rx * math.cos(a), center[1] + ry * math.sin(a), center[2]), w))
-        idx.append(ring)
-    for r in range(len(idx) - 1):
-        m = MAT_NAMES.index(seg_mats[r] if seg_mats else mat)
+    """沿 z 轴的管状体。ring = (中心, (rx, ry), 权重)。相邻的环之间连成四边形,侧面平滑着色。
+
+    换材质的地方(seg_mats 里相邻两段不同)会把那一圈顶点拆开,颜色的分界才是一条干净的线。
+    """
+    def make_ring(center, radius, w):
+        rx, ry = radius
+        return [
+            add_vert((center[0] + rx * math.cos(a), center[1] + ry * math.sin(a), center[2]), w)
+            for a in (2 * math.pi * (i + 0.5) / sides for i in range(sides))
+        ]
+
+    mats = seg_mats or [mat] * (len(rings) - 1)
+    lower = make_ring(*rings[0])
+    first = lower
+    for r in range(len(rings) - 1):
+        upper = make_ring(*rings[r + 1])
         for i in range(sides):
             j = (i + 1) % sides
-            faces.append(((idx[r][i], idx[r][j], idx[r + 1][j], idx[r + 1][i]), m))
-    m = MAT_NAMES.index(seg_mats[0] if seg_mats else mat)
+            face((lower[i], lower[j], upper[j], upper[i]), mats[r], smooth=True)
+        last = upper
+        # 下一段换材质:重新生成一圈顶点,避免两种颜色共用法线
+        lower = make_ring(*rings[r + 1]) if r + 1 < len(mats) and mats[r + 1] != mats[r] else upper
     if cap_start:
-        faces.append((tuple(reversed(idx[0])), m))
-    m = MAT_NAMES.index(seg_mats[-1] if seg_mats else mat)
+        face(reversed(first), mats[0])
     if cap_end:
-        faces.append((tuple(idx[-1]), m))
+        face(last, mats[-1])
 
 
 def box(center, size, mat, w):
@@ -84,138 +97,219 @@ def box(center, size, mat, w):
         for dy in (-1, 1)
         for dx in (-1, 1)
     ]
-    m = MAT_NAMES.index(mat)
     for quad in ((0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2), (1, 3, 7, 5)):
-        faces.append((tuple(ids[i] for i in quad), m))
+        face((ids[i] for i in quad), mat)
 
 
-# ---------------------------------------------------------------- 躯干和头
+def extrude_x(profile, x0, x1, mat, w):
+    """把侧面轮廓(一圈 (y, z) 点)沿 x 方向拉成柱体。"""
+    a = [add_vert((x0, y, z), w) for y, z in profile]
+    b = [add_vert((x1, y, z), w) for y, z in profile]
+    n = len(profile)
+    for i in range(n):
+        j = (i + 1) % n
+        face((a[i], a[j], b[j], b[i]), mat)
+    face(reversed(a), mat)
+    face(b, mat)
+
+
+def bar(p0, p1, t, mat, w):
+    """xz 平面里从 p0 到 p1 的一根方条,截面边长 2t。"""
+    dx, dz = p1[0] - p0[0], p1[1] - p0[1]
+    length = math.hypot(dx, dz)
+    nx, nz = -dz / length * t, dx / length * t
+    ends = []
+    for x, z in (p0, p1):
+        ends.append([add_vert((x + sx * nx, sy * t, z + sx * nz), w) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+    for k in range(4):
+        n = (k + 1) % 4
+        face((ends[0][k], ends[0][n], ends[1][n], ends[1][k]), mat)
+    face(reversed(ends[0]), mat)
+    face(ends[1], mat)
+
+
+# ---------------------------------------------------------------- 躯干
+# 短裤的裆部
 tube(
     [
-        ((0, 0, 0.80), (0.150, 0.110), {"Hips": 1}),
-        ((0, 0, 0.90), (0.178, 0.122), {"Hips": 1}),
-        ((0, 0, 0.99), (0.168, 0.116), {"Hips": 0.6, "Spine": 0.4}),
+        ((0, 0, 0.775), (0.150, 0.112), {"Hips": 1}),
+        ((0, 0, 0.88), (0.186, 0.130), {"Hips": 1}),
+        ((0, 0, 0.99), (0.176, 0.122), {"Hips": 0.6, "Spine": 0.4}),
     ],
-    8,
+    10,
     "Shorts",
 )
+# 上衣:下摆略宽盖住裤腰,收腰,胸和肩最宽;胸口一道饰条
 tube(
     [
-        ((0, 0, 0.97), (0.172, 0.120), {"Hips": 0.5, "Spine": 0.5}),
-        ((0, 0, 1.15), (0.166, 0.115), {"Spine": 1}),
-        ((0, 0, 1.34), (0.214, 0.136), {"Spine": 1}),
-        ((0, 0, 1.45), (0.212, 0.124), {"Spine": 1}),
-        ((0, 0, 1.475), (0.110, 0.085), {"Spine": 1}),
+        ((0, 0, 0.955), (0.187, 0.132), {"Hips": 0.5, "Spine": 0.5}),
+        ((0, 0, 1.08), (0.170, 0.118), {"Spine": 1}),
+        ((0, 0.004, 1.265), (0.204, 0.136), {"Spine": 1}),
+        ((0, 0.004, 1.335), (0.220, 0.142), {"Spine": 1}),
+        ((0, 0, 1.44), (0.218, 0.128), {"Spine": 1}),
+        ((0, 0, 1.488), (0.104, 0.086), {"Spine": 1}),
+    ],
+    10,
+    "Shirt",
+    seg_mats=["Shirt", "Shirt", "Trim", "Shirt", "Shirt"],
+)
+# 领口
+tube(
+    [
+        ((0, 0.004, 1.470), (0.086, 0.080), {"Spine": 1}),
+        ((0, 0.004, 1.502), (0.076, 0.072), {"Spine": 1}),
     ],
     8,
-    "Shirt",
+    "Trim",
 )
+# 脖子
 tube(
     [
-        ((0, 0, 1.44), (0.056, 0.056), {"Spine": 1}),
-        ((0, 0, 1.53), (0.056, 0.056), {"Head": 1}),
+        ((0, 0, 1.45), (0.058, 0.058), {"Spine": 1}),
+        ((0, 0, 1.55), (0.060, 0.060), {"Head": 1}),
     ],
-    6,
+    8,
     "Skin",
 )
+
+# ---------------------------------------------------------------- 头
 H = {"Head": 1}
 tube(
     [
-        ((0, 0.005, 1.505), (0.080, 0.085), H),
-        ((0, 0.005, 1.56), (0.152, 0.150), H),
-        ((0, 0.005, 1.67), (0.172, 0.170), H),
-        ((0, 0.005, 1.78), (0.156, 0.158), H),
-        ((0, 0.005, 1.84), (0.092, 0.096), H),
+        ((0, 0.012, 1.500), (0.066, 0.072), H),
+        ((0, 0.008, 1.540), (0.132, 0.136), H),
+        ((0, 0.005, 1.615), (0.168, 0.164), H),
+        ((0, 0.005, 1.700), (0.176, 0.172), H),
+        ((0, 0.005, 1.780), (0.164, 0.164), H),
+        ((0, 0.005, 1.846), (0.106, 0.110), H),
     ],
-    8,
+    10,
     "Skin",
 )
-# 头发:头顶的帽状 + 后脑勺
+# 头发:从后颈往上包住后脑勺,到头带以上盖住整个头顶;两侧从耳后斜着收到鬓角
 tube(
     [
-        ((0, -0.006, 1.745), (0.181, 0.182), H),
-        ((0, -0.006, 1.812), (0.164, 0.168), H),
-        ((0, -0.006, 1.872), (0.096, 0.102), H),
+        ((0, -0.078, 1.555), (0.130, 0.082), H),
+        ((0, -0.062, 1.640), (0.178, 0.126), H),
+        ((0, -0.010, 1.742), (0.187, 0.188), H),
+        ((0, -0.012, 1.810), (0.178, 0.182), H),
+        ((0, -0.016, 1.872), (0.132, 0.140), H),
+        ((0, -0.020, 1.902), (0.062, 0.070), H),
     ],
-    8,
+    10,
     "Hair",
 )
-box((0, -0.125, 1.68), (0.30, 0.11, 0.19), "Hair", H)
+for s in (-1, 1):
+    box((s * 0.180, 0.012, 1.640), (0.032, 0.052, 0.07), "Skin", H)  # 耳朵
+    box((s * 0.066, 0.166, 1.660), (0.042, 0.024, 0.054), "Eye", H)  # 眼睛
+box((0, 0.176, 1.618), (0.036, 0.034, 0.042), "Skin", H)  # 鼻子
+# 头带
 tube(
     [
-        ((0, 0.002, 1.712), (0.186, 0.185), H),
-        ((0, 0.002, 1.752), (0.186, 0.185), H),
+        ((0, 0.000, 1.708), (0.191, 0.190), H),
+        ((0, 0.000, 1.752), (0.191, 0.190), H),
     ],
-    8,
+    10,
     "Band",
 )
-for s in (-1, 1):  # 眼睛
-    box((s * 0.064, 0.168, 1.655), (0.038, 0.02, 0.05), "Hair", H)
 
 # ---------------------------------------------------------------- 手臂
 for s, suf in ((1, "R"), (-1, "L")):
     x = s * 0.262
     upper, lower = "UpperArm" + suf, "LowerArm" + suf
+    # 袖子:肩头收圆,袖口一圈饰条
     tube(
         [
-            ((x, 0, 1.462), (0.080, 0.082), {upper: 1}),
-            ((x, 0, 1.290), (0.074, 0.076), {upper: 1}),
+            ((x - s * 0.020, 0, 1.494), (0.026, 0.030), {upper: 1}),
+            ((x - s * 0.012, 0, 1.482), (0.058, 0.062), {upper: 1}),
+            ((x - s * 0.004, 0, 1.455), (0.077, 0.081), {upper: 1}),
+            ((x, 0, 1.410), (0.081, 0.085), {upper: 1}),
+            ((x, 0, 1.310), (0.079, 0.082), {upper: 1}),
+            ((x, 0, 1.275), (0.081, 0.084), {upper: 1}),
         ],
-        6,
+        8,
         "Shirt",
+        seg_mats=["Shirt", "Shirt", "Shirt", "Shirt", "Trim"],
     )
     tube(
         [
-            ((x, 0, 1.31), (0.060, 0.060), {upper: 1}),
-            ((x, 0, 1.15), (0.055, 0.055), {upper: 0.5, lower: 0.5}),
-            ((x, 0, 0.90), (0.047, 0.047), {lower: 1}),
+            ((x, 0, 1.290), (0.062, 0.064), {upper: 1}),
+            ((x, 0, 1.180), (0.056, 0.058), {upper: 0.8, lower: 0.2}),
+            ((x, 0, 1.150), (0.057, 0.058), {upper: 0.5, lower: 0.5}),
+            ((x, 0, 1.105), (0.063, 0.064), {upper: 0.1, lower: 0.9}),
+            ((x, 0, 0.940), (0.046, 0.047), {lower: 1}),
         ],
-        6,
+        8,
         "Skin",
+    )
+    # 护腕
+    tube(
+        [
+            ((x, 0, 0.972), (0.055, 0.056), {lower: 1}),
+            ((x, 0, 0.926), (0.053, 0.054), {lower: 1}),
+        ],
+        8,
+        "Band",
     )
     hand = {"HandR": 1} if suf == "R" else {lower: 1}
-    box((x, 0, 0.852), (0.09, 0.10, 0.115), "Skin", hand)
+    box((x, 0.004, 0.858), (0.094, 0.108, 0.128), "Skin", hand)
 
-# ---------------------------------------------------------------- 腿
+# ---------------------------------------------------------------- 腿和脚
 for s, suf in ((1, "R"), (-1, "L")):
     x = s * 0.095
-    thigh, shin = "Thigh" + suf, "Shin" + suf
+    thigh, shin, foot = "Thigh" + suf, "Shin" + suf, "Foot" + suf
+    # 裤腿:下摆略微张开,带一圈饰条
     tube(
         [
-            ((x, 0, 0.87), (0.096, 0.100), {thigh: 1}),
-            ((x, 0, 0.70), (0.092, 0.094), {thigh: 1}),
+            ((x, 0, 0.895), (0.100, 0.106), {thigh: 1}),
+            ((x, 0, 0.705), (0.104, 0.108), {thigh: 1}),
+            ((x, 0, 0.670), (0.105, 0.109), {thigh: 1}),
         ],
-        6,
+        8,
         "Shorts",
+        seg_mats=["Shorts", "Trim"],
     )
+    # 大腿 → 膝盖 → 小腿肚 → 脚踝
     tube(
         [
-            ((x, 0, 0.72), (0.084, 0.086), {thigh: 1}),
-            ((x, 0, 0.50), (0.072, 0.074), {thigh: 0.5, shin: 0.5}),
-            ((x, 0, 0.22), (0.060, 0.062), {shin: 1}),
+            ((x, 0, 0.700), (0.090, 0.094), {thigh: 1}),
+            ((x, 0, 0.545), (0.078, 0.082), {thigh: 0.85, shin: 0.15}),
+            ((x, 0.004, 0.500), (0.075, 0.080), {thigh: 0.5, shin: 0.5}),
+            ((x, 0, 0.455), (0.072, 0.076), {thigh: 0.1, shin: 0.9}),
+            ((x, -0.012, 0.375), (0.077, 0.085), {shin: 1}),
+            ((x, 0, 0.225), (0.055, 0.057), {shin: 1}),
         ],
-        6,
+        8,
         "Skin",
     )
     tube(
         [
-            ((x, 0, 0.235), (0.066, 0.068), {shin: 1}),
-            ((x, 0, 0.095), (0.064, 0.066), {shin: 1}),
+            ((x, 0, 0.255), (0.060, 0.062), {shin: 1}),
+            ((x, 0, 0.115), (0.058, 0.060), {shin: 0.6, foot: 0.4}),
         ],
-        6,
+        8,
         "Sock",
     )
-    box((x, 0.055, 0.055), (0.118, 0.285, 0.10), "Shoes", {shin: 1})
-    box((x, 0.055, 0.012), (0.126, 0.295, 0.024), "Sock", {shin: 1})  # 鞋底
+    # 鞋:鞋帮后高前低,鞋底是白色的一层
+    F = {foot: 1}
+    extrude_x(
+        [(-0.105, 0.030), (0.215, 0.030), (0.215, 0.072), (0.125, 0.104), (0.040, 0.138), (-0.105, 0.138)],
+        x - 0.064,
+        x + 0.064,
+        "Shoes",
+        F,
+    )
+    box((x, 0.057, 0.015), (0.140, 0.336, 0.030), "Sock", F)
 
 # ---------------------------------------------------------------- 球拍(握在右手,自然下垂)
 RX = 0.262
 HW = {"HandR": 1}
-tube([((RX, 0, 0.87), (0.021, 0.021), HW), ((RX, 0, 0.65), (0.019, 0.019), HW)], 6, "Grip")
-tube([((RX, 0, 0.65), (0.015, 0.015), HW), ((RX, 0, 0.50), (0.015, 0.015), HW)], 6, "Racket", cap_start=False)
+tube([((RX, 0, 0.895), (0.027, 0.027), HW), ((RX, 0, 0.880), (0.027, 0.027), HW)], 6, "Racket")  # 拍柄底盖
+tube([((RX, 0, 0.880), (0.022, 0.022), HW), ((RX, 0, 0.650), (0.020, 0.020), HW)], 6, "Grip")
+tube([((RX, 0, 0.650), (0.016, 0.016), HW), ((RX, 0, 0.585), (0.016, 0.016), HW)], 6, "Racket", cap_start=False)
 # 拍框:椭圆环,截面是小方形
-SEG = 12
-CZ, RAD_X, RAD_Z, T = 0.345, 0.128, 0.168, 0.014
+SEG = 14
+CZ, RAD_X, RAD_Z, T = 0.330, 0.135, 0.176, 0.018
 frame = []
 for i in range(SEG):
     a = 2 * math.pi * i / SEG
@@ -224,27 +318,30 @@ for i in range(SEG):
     for dr, dy in ((-T, -T), (T, -T), (T, T), (-T, T)):
         ring.append(add_vert((RX + (RAD_X + dr) * ca, dy, CZ + (RAD_Z + dr) * sa), HW))
     frame.append(ring)
-RM = MAT_NAMES.index("Racket")
 for i in range(SEG):
     a, b = frame[i], frame[(i + 1) % SEG]
     for k in range(4):
         n = (k + 1) % 4
-        faces.append(((a[k], a[n], b[n], b[k]), RM))
+        face((a[k], a[n], b[n], b[k]), "Racket")
+# 拍喉:从拍杆分出两根,接到拍框上
+for s in (-1, 1):
+    ang = math.radians(90 + s * 36)
+    bar((RX + s * 0.008, 0.592), (RX + RAD_X * math.cos(ang), CZ + RAD_Z * math.sin(ang)), 0.013, "Racket", HW)
 # 拍线:一片半透明的面
 strings = [
     add_vert((RX + (RAD_X - T) * math.cos(2 * math.pi * i / SEG), 0, CZ + (RAD_Z - T) * math.sin(2 * math.pi * i / SEG)), HW)
     for i in range(SEG)
 ]
-faces.append((tuple(strings), MAT_NAMES.index("Strings")))
+face(strings, "Strings")
 
 # ---------------------------------------------------------------- 生成网格
 mesh = bpy.data.meshes.new("Player")
 mesh.from_pydata(verts, [], [f[0] for f in faces])
 for m in materials:
     mesh.materials.append(m)
-for poly, (_, mat_index) in zip(mesh.polygons, faces):
+for poly, (_, mat_index, smooth) in zip(mesh.polygons, faces):
     poly.material_index = mat_index
-    poly.use_smooth = False
+    poly.use_smooth = smooth
 mesh.update()
 body = bpy.data.objects.new("Player", mesh)
 bpy.context.scene.collection.objects.link(body)
@@ -268,8 +365,10 @@ BONES = [
     ("LowerArmL", (-0.262, 0, 1.15), "UpperArmL"),
     ("ThighR", (0.095, 0, 0.88), "Hips"),
     ("ShinR", (0.095, 0, 0.50), "ThighR"),
+    ("FootR", (0.095, 0, 0.09), "ShinR"),
     ("ThighL", (-0.095, 0, 0.88), "Hips"),
     ("ShinL", (-0.095, 0, 0.50), "ThighL"),
+    ("FootL", (-0.095, 0, 0.09), "ShinL"),
 ]
 arm_data = bpy.data.armatures.new("Rig")
 rig = bpy.data.objects.new("Rig", arm_data)

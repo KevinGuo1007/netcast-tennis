@@ -455,6 +455,9 @@ function onEvent(e: GameEvent): void {
     case 'net':
       audio.synth('net');
       break;
+    case 'wall':
+      audio.synth('wall', Math.min(1, 0.25 + e.speed / 30) * (e.z > 0 ? 1 : 0.7));
+      break;
     case 'fault':
       audio.synth('fault');
       showBanner('发球失误', 1.1);

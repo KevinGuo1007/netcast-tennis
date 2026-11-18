@@ -4,6 +4,9 @@
 
 输入 brand-src/icon-source.png、brand-src/wordmark-source.png(白底 RGB)
 输出 public/brand/icon.png        圆角方形图标,四角透明
+     public/brand/icon-192.png    同上,给 manifest 和浏览器标签页用
+     public/brand/apple-touch-icon.png  不透明的方形图标(iOS 会自己裁圆角,透明的角会变黑)
+     public/favicon.ico           16 / 32 / 48 三个尺寸,四角透明
      public/brand/wordmark.png     文字标,透明底(紫色 + 青柠色,用在浅色背景上)
      public/brand/wordmark-light.png 文字标,透明底(白色 + 青柠色,用在深色背景上)
 """
@@ -36,7 +39,19 @@ edge = (alpha > 0) & (alpha < 1)
 rgb = img.copy()
 rgb[edge] = img[sy[edge], sx[edge]]
 icon = np.dstack([rgb, alpha * 255]).round().astype(np.uint8)
-Image.fromarray(icon, 'RGBA').resize((512, 512), Image.LANCZOS).save(f'{OUT}/icon.png', optimize=True)
+full = Image.fromarray(icon, 'RGBA')
+full.resize((512, 512), Image.LANCZOS).save(f'{OUT}/icon.png', optimize=True)
+full.resize((192, 192), Image.LANCZOS).save(f'{OUT}/icon-192.png', optimize=True)
+full.resize((256, 256), Image.LANCZOS).save('public/favicon.ico', sizes=[(16, 16), (32, 32), (48, 48)])
+
+# iOS 主屏图标必须不透明:四角用往中心方向缩进去的像素填满,颜色和渐变是连续的
+cx, cy = (W - 1) / 2, (H - 1) / 2
+fx = np.clip(np.rint(cx + (xx - cx) * 0.8), 0, W - 1).astype(int)
+fy = np.clip(np.rint(cy + (yy - cy) * 0.8), 0, H - 1).astype(int)
+solid = img.copy()
+outside = alpha < 1
+solid[outside] = img[fy[outside], fx[outside]]
+Image.fromarray(solid.round().astype(np.uint8), 'RGB').resize((180, 180), Image.LANCZOS).save(f'{OUT}/apple-touch-icon.png', optimize=True)
 
 # ---------------------------------------------------------------- 文字标
 # 文字只有两种纯色(青柠色的 N、紫色的其余字母)。每个像素 = 颜色 × α + 白 × (1 - α),
