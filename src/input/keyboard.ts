@@ -4,7 +4,7 @@ import { PlayerInput } from '../sim/game';
 const SHOT_KEYS: Record<string, ShotType> = { KeyJ: 'flat', Space: 'flat', KeyK: 'top', KeyL: 'slice', KeyI: 'lob' };
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const DOUBLE_TAP_MS = 280;
-const GAME_KEYS = new Set([
+export const GAME_KEYS = new Set([
   'KeyW',
   'KeyA',
   'KeyS',

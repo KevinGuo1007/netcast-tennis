@@ -10,6 +10,18 @@
   box-sizing: border-box;
 }
 
+/* 整个界面都不允许选中文字、长按出菜单或拖动图片。必须写在每个元素上:
+   只写在 body 上时,iPhone 长按 HUD 里的文字仍然会选中并弹出「搜索 / 翻译」菜单 */
+*,
+*::before,
+*::after {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 html,
 body {
   margin: 0;

@@ -3,8 +3,12 @@ import { PlayerInput } from '../sim/game';
 
 const STICK_RADIUS = 52; // 摇杆推到底的像素距离
 
-export const isTouchDevice = (): boolean =>
-  window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+/**
+ * 开局时猜一下用哪种操作方式:主要的输入设备是手指(不能悬停、指向不精确)才算触屏。
+ * 不能看 navigator.maxTouchPoints:带触摸屏的笔记本和一些桌面浏览器也会报告有触摸点,
+ * 那样电脑上就会出现手机的操作按钮。猜错了也没关系,之后会按实际的操作切换(见 main.ts)。
+ */
+export const prefersTouch = (): boolean => window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 
 /**
  * 触屏输入:左半屏是浮动摇杆(按下的位置就是摇杆中心),右下角是四个击球按钮。
@@ -94,8 +98,25 @@ export class TouchControls {
       btn.addEventListener('pointerleave', up);
     });
 
-    // 防止长按弹出菜单、双击缩放
-    root.addEventListener('contextmenu', (e) => e.preventDefault());
+    // 兜底:系统手势(来电、下拉通知、长按菜单……)抢走触摸时,浏览器不一定会补发抬起事件,
+    // 摇杆和按钮就会一直卡在按下的状态。屏幕上已经没有手指、或者页面被切走时,全部松开。
+    const releaseAll = (): void => {
+      this.stickPointer = null;
+      this.x = 0;
+      this.y = 0;
+      base.classList.remove('active');
+      knob.classList.remove('active');
+      for (const btn of this.held) btn.classList.remove('pressed');
+      this.held.clear();
+    };
+    const noFingers = (e: TouchEvent): void => {
+      if (e.touches.length === 0) releaseAll();
+    };
+    window.addEventListener('touchend', noFingers, { passive: true });
+    window.addEventListener('touchcancel', noFingers, { passive: true });
+    window.addEventListener('blur', releaseAll);
+    document.addEventListener('visibilitychange', releaseAll);
+    zone.addEventListener('lostpointercapture', release);
   }
 
   read(): PlayerInput {

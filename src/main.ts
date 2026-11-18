@@ -1,6 +1,6 @@
 import { AudioManager } from './audio/audio';
-import { Keyboard } from './input/keyboard';
-import { isTouchDevice, mergeInputs, TouchControls } from './input/touch';
+import { GAME_KEYS, Keyboard } from './input/keyboard';
+import { mergeInputs, prefersTouch, TouchControls } from './input/touch';
 import { cssColor, SHOT_COLORS } from './render/colors';
 import { GameScene } from './render/scene';
 import { AI_LEVELS, AiController } from './sim/ai';
@@ -31,8 +31,47 @@ const $ = (id: string): HTMLElement => document.getElementById(id)!;
 const audio = new AudioManager();
 const keyboard = new Keyboard();
 const touch = new TouchControls($('touch'));
-const touchMode = isTouchDevice();
+/**
+ * 当前是不是用触屏操作:决定显示摇杆和击球按钮,还是键盘提示。
+ * 先按设备猜一个,然后跟着玩家实际的操作走:手指碰了屏幕就切到触屏,按了游戏按键就切回键盘。
+ * 这样带触摸屏的电脑默认是键盘操作,想用手指点也照样能玩。
+ */
+let touchMode = prefersTouch();
 document.body.classList.toggle('touch', touchMode);
+function setTouchMode(on: boolean): void {
+  if (touchMode === on) return;
+  touchMode = on;
+  document.body.classList.toggle('touch', on);
+}
+window.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (e.pointerType === 'touch') setTouchMode(true);
+    else if (e.pointerType === 'mouse') setTouchMode(false);
+  },
+  true,
+);
+window.addEventListener('keydown', (e) => GAME_KEYS.has(e.code) && setTouchMode(false));
+
+/**
+ * 对局中屏蔽浏览器自带的触摸手势。iPhone 上长按会选中界面上的文字,弹出「搜索 / 翻译」菜单,
+ * 之后的触摸都被系统拿去处理,摇杆和按钮就卡住了。在 touchstart 里取消默认行为,
+ * 长按选字、放大镜、双击缩放都不会再触发;摇杆和击球按钮用的是 pointer 事件,不受影响。
+ * 要靠"点击"生效的按钮(暂停、教学面板里的按钮、菜单)不能拦。
+ */
+document.addEventListener(
+  'touchstart',
+  (e) => {
+    if (!document.body.classList.contains('in-game')) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest('#menu, #pause-btn, #tutorial button')) return;
+    if (e.cancelable) e.preventDefault();
+  },
+  { passive: false },
+);
+for (const type of ['selectstart', 'contextmenu', 'dragstart', 'gesturestart']) {
+  document.addEventListener(type, (e) => e.preventDefault());
+}
 const portrait = window.matchMedia('(orientation: portrait)');
 
 const readInput = (): PlayerInput => mergeInputs(keyboard.read(), touch.read());
