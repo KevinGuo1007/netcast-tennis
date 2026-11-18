@@ -1,0 +1,881 @@
+:root {
+  --purple: #6a2fd3;
+  --purple-deep: #2a1260;
+  --lime: #b8e62e;
+  --white: #ffffff;
+  font-family: 'Avenir Next', 'PingFang SC', 'Helvetica Neue', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--purple-deep);
+  color: var(--white);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#scoreboard {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  background: rgba(26, 10, 64, 0.82);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: clamp(12px, 2.2vw, 16px);
+  min-width: 150px;
+}
+
+#scoreboard .row {
+  display: grid;
+  grid-template-columns: 14px 1fr 28px 40px;
+  align-items: center;
+  height: 28px;
+}
+
+#scoreboard .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+#scoreboard .row.serving .dot {
+  background: var(--lime);
+}
+
+#scoreboard .games,
+#scoreboard .pts {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+#scoreboard .pts {
+  color: var(--purple-deep);
+  background: var(--lime);
+  border-radius: 6px;
+  line-height: 22px;
+}
+
+#banner {
+  position: absolute;
+  top: 24%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(16px, 3.4vw, 34px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 12px rgba(26, 10, 64, 0.8);
+  opacity: 0;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+#banner.show {
+  opacity: 1;
+}
+
+.keys {
+  margin: 18px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #6b5a94;
+}
+
+/* 触屏控件:只在触屏设备上显示 */
+#touch {
+  position: fixed;
+  inset: 0;
+  display: none;
+  touch-action: none;
+}
+
+body.touch #touch {
+  display: block;
+}
+
+#stick-zone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+}
+
+#stick-base,
+#stick-knob {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+#stick-base {
+  width: 124px;
+  height: 124px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+}
+
+#stick-knob {
+  width: 56px;
+  height: 56px;
+  background: var(--lime);
+  box-shadow: 0 2px 10px rgba(10, 4, 30, 0.5);
+}
+
+#stick-base.active,
+#stick-knob.active {
+  opacity: 1;
+}
+
+#shots {
+  position: absolute;
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: 190px;
+  height: 172px;
+}
+
+.shot {
+  position: absolute;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(26, 10, 64, 0.62);
+  color: var(--white);
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 0;
+  touch-action: none;
+}
+
+.shot.flat {
+  right: 0;
+  bottom: 0;
+  width: 86px;
+  height: 86px;
+  font-size: 18px;
+  background: var(--lime);
+  color: var(--purple-deep);
+  border-color: var(--lime);
+}
+
+.shot.top {
+  right: 98px;
+  bottom: 4px;
+}
+
+.shot.slice {
+  right: 76px;
+  bottom: 78px;
+}
+
+.shot.lob {
+  right: 4px;
+  bottom: 100px;
+}
+
+.shot.pressed {
+  transform: scale(0.92);
+  background: var(--white);
+  color: var(--purple-deep);
+}
+
+.keys-touch {
+  display: none;
+}
+
+body.touch .keys-touch {
+  display: block;
+}
+
+body.touch .keys-desktop {
+  display: none;
+}
+
+/* 竖屏提示 */
+#rotate {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: var(--purple-deep);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+#rotate img {
+  width: 96px;
+  border-radius: 22px;
+}
+
+@media (orientation: portrait) {
+  body.touch #rotate {
+    display: flex;
+  }
+}
+
+/* 横屏手机高度有限:压缩开始界面 */
+@media (max-height: 480px) {
+
+  .keys {
+    margin-top: 10px;
+    font-size: 11.5px;
+    line-height: 1.55;
+  }
+
+  #scoreboard .row {
+    height: 22px;
+  }
+
+  #scoreboard .pts {
+    line-height: 18px;
+  }
+}
+
+/* 像素风:画布用最近邻放大,HUD 文字用硬边投影 */
+#game {
+  image-rendering: pixelated;
+}
+
+#banner,
+#grade {
+  text-shadow:
+    3px 3px 0 var(--purple-deep),
+    -1px -1px 0 var(--purple-deep),
+    1px -1px 0 var(--purple-deep),
+    -1px 1px 0 var(--purple-deep);
+}
+
+#scoreboard {
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+#scoreboard .pts {
+  border-radius: 3px;
+}
+
+/* 体力条 */
+.stam {
+  height: 5px;
+  margin: 1px 0 5px 14px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.stam i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--lime);
+}
+
+.stam i.low {
+  background: #ff7a59;
+}
+
+/* 击球评级 */
+#grade {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: clamp(14px, 2.6vw, 24px);
+  font-weight: 900;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+#grade.show {
+  opacity: 1;
+}
+
+#grade.perfect {
+  color: var(--lime);
+}
+
+#grade.poor {
+  color: #ff7a59;
+}
+
+/* ---------- 左上角:记分牌 + 帮助提示框 ---------- */
+#topleft {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+#scoreboard {
+  position: static;
+}
+
+#help {
+  max-width: min(320px, 44vw);
+  background: rgba(0, 0, 0, 0.74);
+  color: #fff;
+  padding: 9px 12px;
+  border-radius: 4px;
+  font-size: clamp(11.5px, 1.7vw, 14px);
+  font-weight: 500;
+  line-height: 1.6;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+#help.show {
+  opacity: 1;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.55em;
+  padding: 0 0.35em;
+  margin: 0 0.12em;
+  border-radius: 4px;
+  background: #fff;
+  color: #14092e;
+  font: inherit;
+  font-size: 0.86em;
+  font-weight: 800;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: 0 2px 0 #a99fc4;
+  vertical-align: 0.06em;
+}
+
+kbd.word {
+  background: var(--lime);
+  box-shadow: 0 2px 0 #7fa01c;
+}
+
+/* ---------- 右下角:按键提示栏 ---------- */
+#keys {
+  position: absolute;
+  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.74);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: clamp(11.5px, 1.6vw, 13.5px);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#keys:empty,
+body.touch #keys {
+  display: none;
+}
+
+#keys .item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#keys .swatch {
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+/* ---------- 球员身旁的力度计 ---------- */
+#meter {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 72px;
+  margin: -72px 0 0 0;
+  background: rgba(0, 0, 0, 0.78);
+  border: 2px solid #fff;
+  display: none;
+}
+
+#meter.show {
+  display: block;
+}
+
+#meter b,
+#meter i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: block;
+}
+
+/* 最佳区(绿)和过力区(红):对打时 60%–85% 是绿区,85% 以上是红区 */
+#meter .good {
+  bottom: 60%;
+  height: 25%;
+  background: rgba(184, 230, 46, 0.5);
+}
+
+#meter .risky {
+  bottom: 85%;
+  height: 15%;
+  background: rgba(255, 90, 60, 0.6);
+}
+
+/* 发球时只有顶端一段绿区 */
+#meter.serve .good {
+  bottom: 85%;
+  height: 15%;
+}
+
+#meter.serve .risky {
+  display: none;
+}
+
+#meter i {
+  bottom: 0;
+  height: 0;
+  background: #fff;
+  mix-blend-mode: normal;
+  opacity: 0.92;
+}
+
+#meter.in-good i {
+  background: var(--lime);
+}
+
+#meter.in-risky i {
+  background: #ff5a3c;
+}
+
+/* 触屏按钮按球种上色,和落点标记一致 */
+.shot.top {
+  border-color: #ff7a59;
+}
+
+.shot.slice {
+  border-color: #ffd166;
+}
+
+.shot.lob {
+  border-color: #39c6ff;
+}
+
+/* ---------- 开始页面和菜单 ---------- */
+body:not(.in-game) #hud,
+body:not(.in-game) #touch,
+body:not(.in-game) #pause-btn {
+  display: none;
+}
+
+#pause-btn {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  width: 38px;
+  height: 38px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(26, 10, 64, 0.82);
+  color: #fff;
+  font: inherit;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+#menu {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: linear-gradient(rgba(42, 18, 96, 0.35), rgba(42, 18, 96, 0.7));
+}
+
+#menu.show {
+  display: flex;
+}
+
+#menu .panel {
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: min(400px, 94vw);
+  max-height: 96vh;
+  overflow: auto;
+  padding: 22px 24px;
+  background: #fff;
+  color: var(--purple-deep);
+  border: 4px solid var(--purple-deep);
+  box-shadow: 8px 8px 0 var(--purple-deep);
+  text-align: center;
+}
+
+#menu .panel.show {
+  display: flex;
+}
+
+#menu .app-icon {
+  width: 76px;
+  height: 76px;
+  align-self: center;
+  border-radius: 18px;
+  image-rendering: auto;
+}
+
+#menu .wordmark {
+  width: 100%;
+  max-width: 300px;
+  align-self: center;
+}
+
+#menu .tagline {
+  margin: 0 0 6px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  color: var(--purple);
+}
+
+#menu h2 {
+  margin: 0 0 4px;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.menu-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 11px 12px;
+  border: 3px solid var(--purple-deep);
+  background: #fff;
+  color: var(--purple-deep);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 var(--purple-deep);
+  transition: transform 0.06s, box-shadow 0.06s;
+}
+
+.menu-btn b {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.menu-btn span {
+  font-size: 12.5px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.menu-btn.primary {
+  background: var(--lime);
+}
+
+.menu-btn:hover:not(:disabled),
+.menu-btn:focus-visible {
+  background: var(--purple);
+  color: #fff;
+  outline: none;
+}
+
+.menu-btn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--purple-deep);
+}
+
+.menu-btn:disabled {
+  cursor: not-allowed;
+  background: #ece6fa;
+  color: #9b8fc0;
+  border-color: #b9aede;
+  box-shadow: 4px 4px 0 #b9aede;
+}
+
+.toggles {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.toggles button {
+  flex: 1;
+  padding: 7px 4px;
+  border: 2px solid var(--purple-deep);
+  background: #fff;
+  color: var(--purple-deep);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toggles button.off {
+  background: #ece6fa;
+  color: #9b8fc0;
+  border-color: #b9aede;
+}
+
+.now-playing {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a68a8;
+}
+
+#menu .link {
+  align-self: center;
+  border: 0;
+  background: none;
+  color: var(--purple);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#menu .keys {
+  margin: 4px 0 0;
+}
+
+.result-score {
+  margin: 0 0 6px;
+  font-size: 40px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--purple);
+}
+
+.credits {
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.credits p {
+  margin: 0 0 10px;
+}
+
+@media (max-height: 480px) {
+  #menu .panel {
+    padding: 12px 18px;
+    gap: 6px;
+    width: min(460px, 94vw);
+  }
+
+  #menu .app-icon {
+    display: none;
+  }
+
+  #menu .wordmark {
+    max-width: 200px;
+  }
+
+  #menu .tagline {
+    margin: 0;
+    font-size: 12px;
+  }
+
+  .menu-btn {
+    padding: 6px 10px;
+  }
+
+  .menu-btn b {
+    font-size: 15px;
+  }
+
+  .menu-btn span {
+    font-size: 11px;
+  }
+
+  #menu h2 {
+    font-size: 18px;
+  }
+
+  .result-score {
+    font-size: 28px;
+  }
+}
+
+/* 对局中顶部居中的文字标:高清显示,不参与像素化 */
+#hud-logo {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 50%;
+  width: clamp(110px, 16vw, 200px);
+  transform: translateX(-50%);
+  opacity: 0.92;
+  filter: drop-shadow(2px 2px 0 rgba(42, 18, 96, 0.9));
+}
+
+#menu .app-icon {
+  border-radius: 0;
+}
+
+/* 收拍调整时力度计变成灰色的倒计时 */
+#meter.cooldown .good,
+#meter.cooldown .risky {
+  display: none;
+}
+
+#meter.cooldown i {
+  background: #9b8fc0;
+}
+
+#meter.cooldown {
+  border-color: #9b8fc0;
+}
+
+#keys kbd:only-child,
+#keys .item kbd {
+  white-space: nowrap;
+}
+
+/* ---------- 新手教学的任务面板 ---------- */
+#tutorial {
+  display: none;
+  width: min(360px, 46vw);
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: clamp(11.5px, 1.6vw, 14px);
+  line-height: 1.6;
+  pointer-events: auto;
+}
+
+body.tutorial #tutorial {
+  display: block;
+}
+
+body.tutorial #scoreboard,
+body.tutorial #help {
+  display: none;
+}
+
+#tutorial .t-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-weight: 800;
+}
+
+#t-title {
+  color: var(--lime);
+}
+
+#t-progress {
+  letter-spacing: 3px;
+  white-space: nowrap;
+}
+
+#t-body i {
+  color: #cbbdf5;
+}
+
+#t-feedback {
+  min-height: 1.6em;
+  margin-top: 6px;
+  font-weight: 800;
+}
+
+#t-feedback.good {
+  color: var(--lime);
+}
+
+#t-feedback.bad {
+  color: #ff9a7c;
+}
+
+#tutorial .t-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+#tutorial .t-actions button {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+#tutorial .t-actions button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+@media (max-height: 480px) {
+  #tutorial {
+    padding: 6px 9px;
+    line-height: 1.45;
+  }
+}
+
+#tutorial .t-head {
+  flex-wrap: wrap;
+}
+
+/* 窗口较窄时教学面板会伸到顶部文字标下面,这时把文字标收起来 */
+@media (max-width: 900px) {
+  body.tutorial #hud-logo {
+    display: none;
+  }
+}
+
+/* 开关一排放不下四个时换行 */
+.toggles {
+  flex-wrap: wrap;
+}
+
+.toggles button {
+  flex: 1 1 40%;
+}

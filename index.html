@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#2a1260" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="apple-touch-icon" href="/brand/icon.png" />
+    <link rel="icon" type="image/png" href="/brand/icon.png" />
+    <title>Netcast Tennis</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <div id="topleft">
+        <div id="scoreboard">
+          <div class="row" id="row0">
+            <span class="dot"></span><span class="name">你</span><span class="games" id="g0">0</span
+            ><span class="pts" id="p0">0</span>
+          </div>
+          <div class="stam"><i id="s0"></i></div>
+          <div class="row" id="row1">
+            <span class="dot"></span><span class="name">电脑</span><span class="games" id="g1">0</span
+            ><span class="pts" id="p1">0</span>
+          </div>
+          <div class="stam"><i id="s1"></i></div>
+        </div>
+        <div id="help"></div>
+        <!-- 新手教学的任务面板 -->
+        <div id="tutorial">
+          <div class="t-head"><span id="t-title"></span><span id="t-progress"></span></div>
+          <div id="t-body"></div>
+          <div id="t-feedback"></div>
+          <div class="t-actions">
+            <button id="t-skip">跳过这一课</button>
+            <button id="t-quit">退出教学</button>
+          </div>
+        </div>
+      </div>
+      <img id="hud-logo" src="/brand/wordmark-light.png" alt="Netcast Tennis" />
+      <div id="banner"></div>
+      <div id="keys"></div>
+      <div id="meter"><b class="risky"></b><b class="good"></b><i></i></div>
+      <div id="grade"></div>
+    </div>
+
+    <div id="touch">
+      <div id="stick-zone"></div>
+      <div id="stick-base"></div>
+      <div id="stick-knob"></div>
+      <div id="shots">
+        <button data-shot="lob" class="shot lob">挑高</button>
+        <button data-shot="top" class="shot top">上旋</button>
+        <button data-shot="slice" class="shot slice">切削</button>
+        <button data-shot="flat" class="shot flat">平击</button>
+      </div>
+    </div>
+
+    <button id="pause-btn" aria-label="暂停">II</button>
+
+    <div id="menu">
+      <!-- 开始页面 -->
+      <section class="panel" data-panel="home">
+        <img class="app-icon" src="/brand/icon.png" alt="" />
+        <img class="wordmark" src="/brand/wordmark.png" alt="Netcast Tennis" />
+        <p class="tagline">3D 像素网球</p>
+        <button class="menu-btn primary" data-action="single"><b>单人模式</b><span>与电脑对战</span></button>
+        <button class="menu-btn" data-action="tutorial" id="tutorial-btn"><b>新手教学</b><span id="tutorial-sub"></span></button>
+        <button class="menu-btn" disabled><b>联机模式</b><span>即将推出</span></button>
+        <div class="toggles">
+          <button data-toggle="music"></button>
+          <button data-toggle="sfx"></button>
+          <button data-toggle="assist"></button>
+          <button data-action="next-track">换一首</button>
+        </div>
+        <p class="now-playing" id="now-playing"></p>
+        <button class="link" data-action="credits">素材致谢</button>
+      </section>
+
+      <!-- 选择难度 -->
+      <section class="panel" data-panel="level">
+        <h2>选择对手</h2>
+        <button class="menu-btn" data-level="easy"><b>简单</b><span>跑得慢、失误多,适合熟悉操作</span></button>
+        <button class="menu-btn primary" data-level="normal"><b>普通</b><span>攻防均衡</span></button>
+        <button class="menu-btn" data-level="hard"><b>困难</b><span>跑动快、落点刁、很少失误</span></button>
+        <p class="keys keys-desktop">
+          WASD / 方向键移动(双击冲刺)· J 平击 · K 上旋 · L 切削 · I 挑高球 · Esc 暂停<br />
+<b>按住</b>击球键蓄力,球到位时自动挥拍(击球辅助);蓄力时方向键改为瞄准
+        </p>
+        <p class="keys keys-touch">
+          左手摇杆移动(双击冲刺)· 右手四个按钮选球种<br />
+<b>按住</b>按钮蓄力,球到位时自动挥拍(击球辅助);蓄力时摇杆改为瞄准
+        </p>
+        <button class="link" data-action="home">返回</button>
+      </section>
+
+      <!-- 暂停 -->
+      <section class="panel" data-panel="pause">
+        <h2>已暂停</h2>
+        <button class="menu-btn primary" data-action="resume"><b>继续比赛</b></button>
+        <button class="menu-btn" data-action="quit"><b>返回主菜单</b><span>放弃这场比赛</span></button>
+        <div class="toggles">
+          <button data-toggle="music"></button>
+          <button data-toggle="sfx"></button>
+          <button data-toggle="assist"></button>
+          <button data-action="next-track">换一首</button>
+        </div>
+      </section>
+
+      <!-- 比赛结果 -->
+      <section class="panel" data-panel="result">
+        <h2 id="result-title"></h2>
+        <p class="result-score" id="result-score"></p>
+        <button class="menu-btn primary" data-action="rematch"><b>再来一场</b></button>
+        <button class="menu-btn" data-action="home"><b>返回主菜单</b></button>
+      </section>
+
+      <!-- 素材致谢 -->
+      <section class="panel" data-panel="credits">
+        <h2>素材致谢</h2>
+        <div class="credits">
+          <p><b>背景音乐</b><br />Kevin MacLeod (incompetech.com),CC BY 4.0:<br />Pixelland · Itty Bitty 8 Bit · Bit Quest · Blip Stream · Pixel Peeker Polka</p>
+          <p><b>录音音效</b>(Freesound,均为 CC0)<br />击球:jacklilley、drewhalasz、13FPanska_Marval_Lukas<br />弹跳:drivr3joe、Negraovictor<br />观众与场馆环境:huubjeroen(ATP 鹿特丹站现场)</p>
+          <p><b>合成音效</b><br />撞网、挥拍风声、界面提示音由程序实时合成</p>
+        </div>
+        <button class="link" data-action="home">返回</button>
+      </section>
+    </div>
+
+    <div id="rotate">
+      <div>
+        <img src="/brand/icon.png" alt="" />
+        <p>请把手机横过来</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
