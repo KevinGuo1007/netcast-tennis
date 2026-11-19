@@ -570,7 +570,6 @@ body:not(.in-game) #pause-btn {
   width: 76px;
   height: 76px;
   align-self: center;
-  border-radius: 18px;
   image-rendering: auto;
 }
 
@@ -759,10 +758,6 @@ body:not(.in-game) #pause-btn {
   transform: translateX(-50%);
   opacity: 0.92;
   filter: drop-shadow(2px 2px 0 rgba(42, 18, 96, 0.9));
-}
-
-#menu .app-icon {
-  border-radius: 0;
 }
 
 /* 收拍调整时力度计变成灰色的倒计时 */

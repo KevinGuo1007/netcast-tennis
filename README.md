@@ -20,6 +20,8 @@
 | 发球 | J 抛球,球到最高点再按 J | 点「平击」两次 |
 | 暂停 | Esc | 右上角按钮 |
 
+界面会跟着实际的操作方式切换:手指碰屏幕就显示摇杆和击球按钮,按游戏按键或点鼠标就换回键盘提示。
+
 击球是「按住蓄力」:跑到落点附近后按住击球键,蓄力期间方向键改为瞄准,对面的准星就是落点。
 
 - 开着**击球辅助**(默认)时,一直按住不放,球到位会自动挥拍。
@@ -30,7 +32,7 @@
 
 ## 开发
 
-需要 Node.js 20 以上。
+需要 Node.js 22.12 以上(测试框架 Vitest 5 的要求;只构建不跑测试的话 20.19 也可以)。
 
 ```bash
 npm install
@@ -39,7 +41,7 @@ npm test         # 单元测试(Vitest)
 npm run build    # 类型检查 + 生产构建,产物在 dist/
 ```
 
-部署在 Vercel 上,是纯静态站点:
+部署在 Vercel 上,是纯静态站点。项目没有和 Git 仓库关联,下面的命令上传的是本地当前的文件(包括没提交的改动),所以先提交再部署:
 
 ```bash
 vercel deploy --prod
@@ -88,4 +90,4 @@ public/           模型、Logo、音频等静态资源
 python3 tools/make_brand_assets.py
 ```
 
-**音频**:击球、弹跳、掌声和场馆环境声来自 Freesound 上的 CC0 录音;背景音乐是 Kevin MacLeod 的作品(CC BY 4.0);撞网、挥拍风声和界面提示音由程序实时合成。完整的来源和授权见 [public/audio/CREDITS.md](public/audio/CREDITS.md)。
+**音频**:击球、弹跳、掌声和场馆环境声来自 Freesound 上的 CC0 录音;背景音乐是 Kevin MacLeod 的作品(CC BY 4.0);撞网、撞墙、挥拍风声和界面提示音由程序实时合成。完整的来源和授权见 [public/audio/CREDITS.md](public/audio/CREDITS.md)。
